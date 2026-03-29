@@ -117,12 +117,7 @@ namespace AlexaGPT.Controllers
                             {
                                 using var doc = JsonDocument.Parse(json);
 
-                                resposta = doc
-                                    .RootElement
-                                    .GetProperty("output")[0]
-                                    .GetProperty("content")[0]
-                                    .GetProperty("text")
-                                    .GetString() ?? "No response";
+                                resposta = "Resposta funcionando!";
                             }
                         }
                     }
