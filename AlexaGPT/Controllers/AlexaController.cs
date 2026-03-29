@@ -115,9 +115,21 @@ namespace AlexaGPT.Controllers
                             }
                             else
                             {
-                                using var doc = JsonDocument.Parse(json);
+                                try
+                                {
+                                    using var doc = JsonDocument.Parse(json);
 
-                                resposta = "Resposta funcionando!";
+                                    resposta = doc.RootElement
+                                        .GetProperty("output")[0]
+                                        .GetProperty("content")[0]
+                                        .GetProperty("text")
+                                        .GetString() ?? "No response";
+                                }
+                                catch
+                                {
+                                    Console.WriteLine("Erro ao parsear resposta OpenAI");
+                                    resposta = "Error reading AI response.";
+                                }
                             }
                         }
                     }
