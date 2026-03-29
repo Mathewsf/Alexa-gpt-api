@@ -29,7 +29,7 @@ namespace AlexaGPT.Controllers
                     .GetProperty("type")
                     .GetString();
 
-                Console.WriteLine($"📌 Tipo da request: {requestType}");
+                Console.WriteLine($"Tipo da request: {requestType}");
 
                 // 🔹 Quando abre a skill
                 if (requestType == "LaunchRequest")
@@ -80,7 +80,7 @@ namespace AlexaGPT.Controllers
 
                         if (string.IsNullOrEmpty(apiKey))
                         {
-                            Console.WriteLine("❌ API Key não configurada!");
+                            Console.WriteLine("API Key não configurada!");
                             resposta = "Configuration error.";
                         }
                         else
@@ -105,7 +105,7 @@ namespace AlexaGPT.Controllers
                             var response = client.SendAsync(requestMessage).Result;
                             var json = response.Content.ReadAsStringAsync().Result;
 
-                            Console.WriteLine("📡 Resposta OpenAI:");
+                            Console.WriteLine("Resposta OpenAI:");
                             Console.WriteLine(json);
 
                             if (!response.IsSuccessStatusCode)
