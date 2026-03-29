@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using System.Text;
 using System.Text.Json;
 
 namespace AlexaGPT.Controllers
@@ -18,65 +17,108 @@ namespace AlexaGPT.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Post([FromBody] JsonElement body)
+        public IActionResult Post([FromBody] JsonElement body)
         {
-            var userText = body
-                .GetProperty("request")
-                .GetProperty("intent")
-                .GetProperty("slots")
-                .GetProperty("query")
-                .GetProperty("value")
-                .GetString();
-
-            var apiKey = _config["OpenAI:ApiKey"];
-
-            var client = _httpClientFactory.CreateClient();
-
-            var openAiRequest = new
+            try
             {
-                model = "gpt-4.1-mini",
-                messages = new[]
+                // 🔹 Pega o tipo da request
+                string? requestType = body
+                    .GetProperty("request")
+                    .GetProperty("type")
+                    .GetString();
+
+                // 🔹 Quando abre a skill
+                if (requestType == "LaunchRequest")
                 {
-                    new { role = "system", content = "Você é um assistente útil." },
-                    new { role = "user", content = userText }
-                }
-            };
-
-            var requestContent = new StringContent(
-                JsonSerializer.Serialize(openAiRequest),
-                Encoding.UTF8,
-                "application/json"
-            );
-
-            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-
-            var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", requestContent);
-
-            var responseString = await response.Content.ReadAsStringAsync();
-
-            using var responseDoc = JsonDocument.Parse(responseString);
-
-            var answer = responseDoc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
-
-            var alexaResponse = new
-            {
-                version = "1.0",
-                response = new
-                {
-                    outputSpeech = new
+                    return Ok(new
                     {
-                        type = "PlainText",
-                        text = answer
-                    },
-                    shouldEndSession = false
+                        version = "1.0",
+                        response = new
+                        {
+                            outputSpeech = new
+                            {
+                                type = "PlainText",
+                                text = "Hello, you can ask me anything."
+                            },
+                            shouldEndSession = false
+                        }
+                    });
                 }
-            };
 
-            return Ok(alexaResponse);
+                // 🔹 Quando faz pergunta
+                if (requestType == "IntentRequest")
+                {
+                    string query = "";
+
+                    var request = body.GetProperty("request");
+
+                    if (request.TryGetProperty("intent", out var intent))
+                    {
+                        if (intent.TryGetProperty("slots", out var slots))
+                        {
+                            if (slots.TryGetProperty("query", out var querySlot))
+                            {
+                                if (querySlot.TryGetProperty("value", out var value))
+                                {
+                                    query = value.GetString() ?? "";
+                                }
+                            }
+                        }
+                    }
+
+                    string resposta = "I didn't understand.";
+
+                    if (!string.IsNullOrEmpty(query))
+                    {
+                        resposta = "You asked: " + query;
+                    }
+
+                    return Ok(new
+                    {
+                        version = "1.0",
+                        response = new
+                        {
+                            outputSpeech = new
+                            {
+                                type = "PlainText",
+                                text = resposta
+                            },
+                            shouldEndSession = false
+                        }
+                    });
+                }
+
+                // 🔹 fallback
+                return Ok(new
+                {
+                    version = "1.0",
+                    response = new
+                    {
+                        outputSpeech = new
+                        {
+                            type = "PlainText",
+                            text = "Sorry, I couldn't process your request."
+                        },
+                        shouldEndSession = true
+                    }
+                });
+            }
+            catch
+            {
+                return Ok(new
+                {
+                    version = "1.0",
+                    response = new
+                    {
+                        outputSpeech = new
+                        {
+                            type = "PlainText",
+                            text = "Error processing request."
+                        },
+                        shouldEndSession = true
+                    }
+                });
+            }
         }
     }
 }
