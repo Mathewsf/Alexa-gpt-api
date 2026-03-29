@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.Text;
 using System.Text.Json;
 
 namespace AlexaGPT.Controllers
@@ -21,11 +22,14 @@ namespace AlexaGPT.Controllers
         {
             try
             {
-                // 🔹 Pega o tipo da request
+                Console.WriteLine("Request recebida da Alexa");
+
                 string? requestType = body
                     .GetProperty("request")
                     .GetProperty("type")
                     .GetString();
+
+                Console.WriteLine($"📌 Tipo da request: {requestType}");
 
                 // 🔹 Quando abre a skill
                 if (requestType == "LaunchRequest")
@@ -38,7 +42,7 @@ namespace AlexaGPT.Controllers
                             outputSpeech = new
                             {
                                 type = "PlainText",
-                                text = "Hello, you can ask me anything."
+                                text = "Hello, I am your smart assistant. Ask me anything."
                             },
                             shouldEndSession = false
                         }
@@ -66,11 +70,61 @@ namespace AlexaGPT.Controllers
                         }
                     }
 
+                    Console.WriteLine($"Pergunta recebida: {query}");
+
                     string resposta = "I didn't understand.";
 
                     if (!string.IsNullOrEmpty(query))
                     {
-                        resposta = "You asked: " + query;
+                        var apiKey = _config["OpenAI:ApiKey"];
+
+                        if (string.IsNullOrEmpty(apiKey))
+                        {
+                            Console.WriteLine("❌ API Key não configurada!");
+                            resposta = "Configuration error.";
+                        }
+                        else
+                        {
+                            var client = _httpClientFactory.CreateClient();
+
+                            var requestBody = new
+                            {
+                                model = "gpt-4.1-mini",
+                                input = query
+                            };
+
+                            var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
+                            requestMessage.Headers.Add("Authorization", $"Bearer {apiKey}");
+
+                            requestMessage.Content = new StringContent(
+                                JsonSerializer.Serialize(requestBody),
+                                Encoding.UTF8,
+                                "application/json"
+                            );
+
+                            var response = client.SendAsync(requestMessage).Result;
+                            var json = response.Content.ReadAsStringAsync().Result;
+
+                            Console.WriteLine("📡 Resposta OpenAI:");
+                            Console.WriteLine(json);
+
+                            if (!response.IsSuccessStatusCode)
+                            {
+                                Console.WriteLine($"Erro OpenAI: {response.StatusCode}");
+                                resposta = "Error contacting AI service.";
+                            }
+                            else
+                            {
+                                using var doc = JsonDocument.Parse(json);
+
+                                resposta = doc
+                                    .RootElement
+                                    .GetProperty("output")[0]
+                                    .GetProperty("content")[0]
+                                    .GetProperty("text")
+                                    .GetString() ?? "No response";
+                            }
+                        }
                     }
 
                     return Ok(new
@@ -103,8 +157,11 @@ namespace AlexaGPT.Controllers
                     }
                 });
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine("ERRO GERAL:");
+                Console.WriteLine(ex.ToString());
+
                 return Ok(new
                 {
                     version = "1.0",
