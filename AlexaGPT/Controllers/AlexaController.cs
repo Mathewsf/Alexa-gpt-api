@@ -24,60 +24,44 @@ namespace AlexaGPT.Controllers
             {
                 Console.WriteLine("Request recebida da Alexa");
 
-                string? requestType = body
-                    .GetProperty("request")
-                    .GetProperty("type")
-                    .GetString();
+                //SAFE GET
+                if (!body.TryGetProperty("request", out var request))
+                    return ErrorResponse("Invalid request");
 
-                string locale = body
-                    .GetProperty("request")
-                    .GetProperty("locale")
-                    .GetString() ?? "en-US";
+                string requestType = request.TryGetProperty("type", out var typeProp)
+                    ? typeProp.GetString() ?? ""
+                    : "";
+
+                string locale = request.TryGetProperty("locale", out var localeProp)
+                    ? localeProp.GetString() ?? "en-US"
+                    : "en-US";
 
                 Console.WriteLine($"Tipo: {requestType} | Locale: {locale}");
 
-                // 🔹 Detecta idioma
                 bool isPortuguese = locale.StartsWith("pt");
 
-                // 🔹 Quando abre a skill
+                // LaunchRequest
                 if (requestType == "LaunchRequest")
                 {
-                    return Ok(new
-                    {
-                        version = "1.0",
-                        response = new
-                        {
-                            outputSpeech = new
-                            {
-                                type = "PlainText",
-                                text = isPortuguese
-                                    ? "Olá, sou seu assistente inteligente. Pode perguntar o que quiser."
-                                    : "Hello, I am your smart assistant. Ask me anything."
-                            },
-                            shouldEndSession = false
-                        }
-                    });
+                    return Response(
+                        isPortuguese
+                            ? "Olá, sou seu assistente inteligente. Pode perguntar o que quiser."
+                            : "Hello, I am your smart assistant. Ask me anything.",
+                        false
+                    );
                 }
 
-                // 🔹 Quando faz pergunta
+                //IntentRequest
                 if (requestType == "IntentRequest")
                 {
                     string query = "";
 
-                    var request = body.GetProperty("request");
-
-                    if (request.TryGetProperty("intent", out var intent))
+                    if (request.TryGetProperty("intent", out var intent) &&
+                        intent.TryGetProperty("slots", out var slots) &&
+                        slots.TryGetProperty("query", out var querySlot) &&
+                        querySlot.TryGetProperty("value", out var value))
                     {
-                        if (intent.TryGetProperty("slots", out var slots))
-                        {
-                            if (slots.TryGetProperty("query", out var querySlot))
-                            {
-                                if (querySlot.TryGetProperty("value", out var value))
-                                {
-                                    query = value.GetString() ?? "";
-                                }
-                            }
-                        }
+                        query = value.GetString() ?? "";
                     }
 
                     Console.WriteLine($"Pergunta: {query}");
@@ -101,7 +85,6 @@ namespace AlexaGPT.Controllers
                         {
                             var client = _httpClientFactory.CreateClient();
 
-                            // 🔥 Prompt com idioma + resposta curta
                             string prompt = isPortuguese
                                 ? $"Responda em português de forma curta e clara: {query}"
                                 : $"Answer briefly and clearly: {query}";
@@ -127,20 +110,12 @@ namespace AlexaGPT.Controllers
                             Console.WriteLine("Resposta OpenAI:");
                             Console.WriteLine(json);
 
-                            if (!response.IsSuccessStatusCode)
-                            {
-                                Console.WriteLine($"Erro OpenAI: {response.StatusCode}");
-                                resposta = isPortuguese
-                                    ? "Erro ao consultar a inteligência artificial."
-                                    : "Error contacting AI service.";
-                            }
-                            else
+                            if (response.IsSuccessStatusCode)
                             {
                                 try
                                 {
                                     using var doc = JsonDocument.Parse(json);
 
-                                    // 🔥 PARSE SEGURO (NÃO QUEBRA MAIS)
                                     if (doc.RootElement.TryGetProperty("output", out var output) &&
                                         output.ValueKind == JsonValueKind.Array &&
                                         output.GetArrayLength() > 0)
@@ -151,79 +126,72 @@ namespace AlexaGPT.Controllers
                                             content.ValueKind == JsonValueKind.Array &&
                                             content.GetArrayLength() > 0)
                                         {
-                                            var text = content[0].GetProperty("text").GetString();
+                                            var text = content[0].TryGetProperty("text", out var txt)
+                                                ? txt.GetString()
+                                                : null;
 
                                             if (!string.IsNullOrEmpty(text))
-                                            {
                                                 resposta = text;
-                                            }
                                         }
                                     }
                                 }
-                                catch (Exception parseEx)
+                                catch (Exception ex)
                                 {
-                                    Console.WriteLine("Erro ao parsear resposta OpenAI:");
-                                    Console.WriteLine(parseEx.ToString());
-
-                                    resposta = isPortuguese
-                                        ? "Erro ao interpretar resposta."
-                                        : "Error reading AI response.";
+                                    Console.WriteLine("Erro parse OpenAI:");
+                                    Console.WriteLine(ex);
                                 }
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Erro OpenAI: {response.StatusCode}");
+                                resposta = isPortuguese
+                                    ? "Erro ao consultar IA."
+                                    : "Error contacting AI.";
                             }
                         }
                     }
 
-                    return Ok(new
-                    {
-                        version = "1.0",
-                        response = new
-                        {
-                            outputSpeech = new
-                            {
-                                type = "PlainText",
-                                text = resposta
-                            },
-                            shouldEndSession = false
-                        }
-                    });
+                    return Response(resposta, false);
                 }
 
-                // 🔹 fallback
-                return Ok(new
-                {
-                    version = "1.0",
-                    response = new
-                    {
-                        outputSpeech = new
-                        {
-                            type = "PlainText",
-                            text = isPortuguese
-                                ? "Desculpe, não consegui processar."
-                                : "Sorry, I couldn't process your request."
-                        },
-                        shouldEndSession = true
-                    }
-                });
+                // fallback
+                return Response(
+                    isPortuguese
+                        ? "Desculpe, não consegui processar."
+                        : "Sorry, I couldn't process your request.",
+                    true
+                );
             }
             catch (Exception ex)
             {
                 Console.WriteLine("ERRO GERAL:");
-                Console.WriteLine(ex.ToString());
+                Console.WriteLine(ex);
 
-                return Ok(new
-                {
-                    version = "1.0",
-                    response = new
-                    {
-                        outputSpeech = new
-                        {
-                            type = "PlainText",
-                            text = "Erro interno."
-                        },
-                        shouldEndSession = true
-                    }
-                });
+                return Response("Erro interno.", true);
             }
+        }
+
+        //Helpers corrigidos (retornam IActionResult)
+        private IActionResult Response(string text, bool endSession)
+        {
+            return Ok(new
+            {
+                version = "1.0",
+                response = new
+                {
+                    outputSpeech = new
+                    {
+                        type = "PlainText",
+                        text = text
+                    },
+                    shouldEndSession = endSession
+                }
+            });
+        }
+
+        private IActionResult ErrorResponse(string message)
+        {
+            return Response(message, true);
         }
     }
 }
